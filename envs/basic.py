@@ -19,6 +19,7 @@ def make_game(
     resolution: "vzd.ScreenResolution" = vzd.ScreenResolution.RES_160X120,
     grayscale: bool = True,
     labels: bool = False,
+    position: bool = False,
 ) -> "vzd.DoomGame":
     """Create and `init()` a configured DoomGame for a built-in scenario.
 
@@ -28,7 +29,8 @@ def make_game(
         visible: render a window (False = headless, required on the Pi).
         resolution: screen resolution; 160x120 is the lightest.
         grayscale: GRAY8 (1 channel) instead of RGB24 (3 channels).
-        labels: enable the semantic labels buffer (needed by the structured encoder).
+        labels: enable the semantic labels buffer (needed by the structured/nav encoders).
+        position: expose POSITION_X/Y + ANGLE (needed by the navigation encoder).
     """
     game = vzd.DoomGame()
     # Sets buttons, living/death reward, the .wad, etc.
@@ -41,6 +43,9 @@ def make_game(
     game.set_mode(vzd.Mode.PLAYER)  # synchronous: engine waits for the agent
     if labels:
         game.set_labels_buffer_enabled(True)
+    if position:
+        for gv in (vzd.GameVariable.POSITION_X, vzd.GameVariable.POSITION_Y, vzd.GameVariable.ANGLE):
+            game.add_available_game_variable(gv)
     game.init()
     return game
 

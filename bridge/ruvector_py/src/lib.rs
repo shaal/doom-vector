@@ -8,6 +8,8 @@
 //! NOTE: if the build fails on the import paths below, the public re-exports in
 //! your installed 2.2.0 differ — try `ruvector_core::vector_db::VectorDB` and
 //! confirm `types` paths with `cargo doc --open`.
+mod world_model;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -92,5 +94,6 @@ impl RuVectorMemory {
 #[pymodule]
 fn ruvector_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RuVectorMemory>()?;
+    m.add_class::<world_model::WorldModel>()?;
     Ok(())
 }

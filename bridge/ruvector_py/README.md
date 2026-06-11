@@ -15,7 +15,9 @@ python -c "import ruvector_py; m=ruvector_py.RuVectorMemory(3); \
 
 > **Dev-env note:** maturin aborts if both `VIRTUAL_ENV` and `CONDA_PREFIX` are
 > set — `unset CONDA_PREFIX` first. A `uv`-created venv has no `pip`; install
-> maturin into it with `uv pip install maturin`.
+> maturin with `uv pip install maturin` and build with
+> `maturin develop --release --uv -m bridge/ruvector_py/Cargo.toml` (the `--uv`
+> flag is required so maturin uses uv instead of pip to install the module).
 
 ## Cross-build for the Pi (aarch64)
 See `deploy/build_pyo3_arm64.sh` (maturin + zig). Build on a fast machine; copy

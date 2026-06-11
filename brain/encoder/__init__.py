@@ -4,14 +4,21 @@
   - "structured": game variables + labeled-object features (no pixels).
     Requires the labels buffer enabled on the game; lighter and usually a
     stronger recall signal for combat scenarios like `basic`.
+  - "navigation": agent pose (position + heading) + nearest object. The right
+    key for path prediction; requires the game created with position=True
+    (and labels=True for object features).
 """
 from __future__ import annotations
 
+from .navigation import make_nav_encoder
 from .structured import encode_structured, structured_dim
 from .thumbnail import encode_thumbnail
 
 
 def make_encoder(kind: str, game, *, thumb: int = 16, max_objects: int = 8):
+    if kind == "navigation":
+        return make_nav_encoder(game, max_objects=max(1, max_objects // 8))
+
     if kind == "thumbnail":
         dim = thumb * thumb
 
