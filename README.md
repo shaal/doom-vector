@@ -4,6 +4,10 @@ A self-learning Doom agent built on **ViZDoom** (environment) + **RuVector** (`r
 
 **It works:** on ViZDoom's `basic`, the agent learns from a random baseline of **−152** to a **positive score in under 25 episodes** (holding +30 to +50) — using a ~33-dim structured state encoder, the native RuVector backend, and ~50 MiB RAM. No neural network is trained; "learning" is reward-weighted experiences accumulating in the vector memory.
 
+![The agent navigating ViZDoom's Deadly Corridor after ~150 episodes](demo_deadly_corridor.gif)
+
+*Above: a greedy `deadly_corridor` episode after ~150 episodes of learning — the agent navigates by reward-weighted recall over RuVector, with no trained network. The same brain runs real-time on a 32-bit Raspberry Pi Zero 2 W (see Tier 3 below).*
+
 See [`docs/plans/doom-vector-self-learning-agent.md`](docs/plans/doom-vector-self-learning-agent.md) for the full design, rationale, and roadmap.
 
 ## Repo layout
