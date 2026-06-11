@@ -230,7 +230,13 @@ Both fixes were built and tested: (1) the **reactive value-vote** on the navigat
 
 **Diagnosis — state representation, not the planner:** (a) the navigation encoder **omits HEALTH**, the decisive survival variable, so two states at the same pose but different health are indistinguishable to recall; (b) in a survival task, **return-to-go is confounded with time-/health-remaining** rather than action quality, so value-by-recall is noisy. `basic` worked because the structured encoder captured the decisive variable (monster position) and reward was cleanly tied to the action.
 
-**Recommendation / next:** either (i) **fix the encoder** — add HEALTH (+ kit bearing) and retry the reactive vote; or (ii) switch to a **distance-shaped scenario** (`deadly_corridor`) where return-to-go tracks navigation progress, a cleaner value signal; or (iii) **consolidate** — `basic` is a working, Pi-viable demo, so go to **Tier 3 on the real Pi Zero 2 W**. What demonstrably works today: `basic` (combat, structured encoder, reactive value recall).
+**Phase 2 RESOLVED — navigation learns once the state is right (2026-06-10).** Both targeted fixes worked:
+- (i) **Adding HEALTH to the navigation encoder** turned `health_gathering` around: the reactive value-vote climbs from a ~320 random baseline to ~400 (peak 492), versus drifting *below* baseline without HEALTH. The diagnosis was right — it was the missing decisive state variable.
+- (ii) **`deadly_corridor`** (distance-shaped reward) learns strongly: −30 (random) → **+330** by ep 150, clean upward trend — the best navigation result, even with 128 actions, in ~40 s at ~57 MiB.
+
+**The winning recipe is reactive value-weighted per-step recall over RuVector with an adequate state encoding.** Three learning scenarios now: `basic` (combat, structured encoder), `health_gathering` (survival, nav encoder + HEALTH), `deadly_corridor` (navigation, nav encoder). All native backend, 1 search/decision, Pi-viable (~45–80 MiB). Open-loop replay (A) and reward-sum rollout (B) were the wrong mechanisms.
+
+**Next:** Tier 3 on the real Pi Zero 2 W — multiple working, lightweight scenarios to demo (incl. a navigation one).
 
 ## 8. Sources
 - ViZDoom: https://github.com/Farama-Foundation/ViZDoom · https://vizdoom.farama.org/

@@ -18,12 +18,14 @@ import numpy as np
 import vizdoom as vzd
 
 _POS_SCALE = 1000.0  # Doom map units -> ~O(1); only relative scale matters for k-NN
+_HEALTH_SCALE = 100.0
 _SCREEN_W = 320.0
 _SCREEN_H = 240.0
 
 
 def navigation_dim(max_objects: int = 1) -> int:
-    return 4 + max_objects * 3  # px, py, sin, cos + (dx, dy, area) per object
+    # px, py, sin, cos, health + (dx, dy, area) per object
+    return 5 + max_objects * 3
 
 
 def make_nav_encoder(game, *, max_objects: int = 1, pos_scale: float = _POS_SCALE):
@@ -31,7 +33,10 @@ def make_nav_encoder(game, *, max_objects: int = 1, pos_scale: float = _POS_SCAL
         px = game.get_game_variable(vzd.GameVariable.POSITION_X) / pos_scale
         py = game.get_game_variable(vzd.GameVariable.POSITION_Y) / pos_scale
         ang = math.radians(game.get_game_variable(vzd.GameVariable.ANGLE))
-        feats = [px, py, math.sin(ang), math.cos(ang)]
+        # HEALTH is the decisive variable in survival tasks (health_gathering);
+        # without it, states at the same pose but different health collide.
+        health = game.get_game_variable(vzd.GameVariable.HEALTH) / _HEALTH_SCALE
+        feats = [px, py, math.sin(ang), math.cos(ang), health]
 
         objs = np.zeros((max_objects, 3), dtype=np.float32)
         labels = sorted(

@@ -44,7 +44,13 @@ def make_game(
     if labels:
         game.set_labels_buffer_enabled(True)
     if position:
-        for gv in (vzd.GameVariable.POSITION_X, vzd.GameVariable.POSITION_Y, vzd.GameVariable.ANGLE):
+        # pose + HEALTH proprioception bundle for the navigation encoder
+        for gv in (
+            vzd.GameVariable.POSITION_X,
+            vzd.GameVariable.POSITION_Y,
+            vzd.GameVariable.ANGLE,
+            vzd.GameVariable.HEALTH,
+        ):
             game.add_available_game_variable(gv)
     game.init()
     return game
