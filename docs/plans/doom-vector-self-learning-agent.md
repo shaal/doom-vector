@@ -267,6 +267,42 @@ We then got the *environment* onto the Seed too (there is no 32-bit ViZDoom whee
 
 **Next:** scale on-device episodes / try a navigation scenario on the Seed; optionally a 64-bit Pi OS (avoids the armhf workarounds and re-enables SIMD). Filed [cognitum-one/support#60](https://github.com/cognitum-one/support/issues/60) asking why the Seed ships 32-bit and for a supported 64-bit path.
 
+## Next steps (planned)
+
+Queued for a future session. The Seed is reached via the SSH helper in the parent
+`cognitum/` dir (credentials live in the maintainer's local notes, not this public
+repo); the agent code + venv are already deployed on the Seed under `~/doom-vector`
+and `~/dv-bench`.
+
+### A. Scale on-device
+Push past the 60-episode `basic` smoke — longer runs and a navigation scenario,
+measuring learning + RAM + throughput at scale on the A53.
+- Run `train.py` on the Seed headless (`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`),
+  store on **rootfs** (`--store ~/dvstore.rvf`), NOT the 32 MB `/tmp` tmpfs; keep
+  `--capacity` modest (≤ 20k — the Seed shares ~300 MB free with its agent stack).
+- Try `deadly_corridor` (nav encoder; distance-shaped reward — learned +330 on
+  desktop) and `health_gathering` (nav encoder, HEALTH already included) on-device.
+- Capture: eval curve, RSS-at-scale, episodes/sec on the A53. Watch for OOM; the
+  store/HNSW is bounded (`max_elements`) but verify under longer runs.
+
+### B. Record an on-device gameplay GIF (rendered on the Seed)
+A clip rendered on the Seed itself (vs the current desktop GIF).
+- `experiments/record_demo.py` already grabs RGB frames headlessly. **Open question:**
+  whether ViZDoom fills `screen_buffer` with no display. We ran training with
+  `SDL_VIDEODRIVER=dummy`, which likely yields blank frames — so the first step is
+  rendering headless: most reliable is **`xvfb-run`** (a virtual framebuffer:
+  `sudo apt install xvfb`, then `xvfb-run -a python experiments/record_demo.py ...`).
+- Install `imageio` + `pillow` in the Seed venv (`--extra-index-url https://www.piwheels.org/simple`).
+- Likely cheapest path: capture frames on the Seed → copy raw frames back to the
+  desktop → encode the GIF on the desktop (avoids heavy encoding on the A53).
+- Deliverable: `demo_seed_<scenario>.gif`, committed + embedded in the README as the
+  "rendered on the actual Seed" artifact.
+
+### C. (optional) Go 64-bit
+If [cognitum-one/support#60](https://github.com/cognitum-one/support/issues/60)
+recommends it: a 64-bit Pi OS drops the armhf workarounds (prebuilt ViZDoom wheel,
+re-enable SIMD, no Euclidean-only constraint).
+
 ## 8. Sources
 - ViZDoom: https://github.com/Farama-Foundation/ViZDoom · https://vizdoom.farama.org/
 - RuVector: https://github.com/ruvnet/RuVector · `ruvector-sona` on crates.io
