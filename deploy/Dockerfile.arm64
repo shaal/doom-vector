@@ -1,0 +1,25 @@
+# aarch64 correctness sandbox (Tier 2).
+#   x86 host:        run deploy/setup_binfmt.sh first (QEMU). Timing is MEANINGLESS here.
+#   Apple Silicon:   runs natively (real NEON), still NOT a 512 MB RAM proxy.
+# Cross-build the wheel into dist/ first: deploy/build_pyo3_arm64.sh
+FROM --platform=linux/arm64 python:3.11-slim-bookworm
+
+WORKDIR /app
+
+# ViZDoom runtime libs (its aarch64 manylinux wheel bundles most; these cover the rest).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsdl2-2.0-0 libopenal1 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Optional: install the cross-built native binding; fall back to numpy if absent.
+COPY dist/ /tmp/dist/
+RUN sh -c 'ls /tmp/dist/*aarch64*.whl >/dev/null 2>&1 && pip install --no-cache-dir /tmp/dist/*aarch64*.whl \
+        || echo "no arm64 ruvector_py wheel present -> numpy fallback"'
+
+COPY . .
+
+# Cap at the Pi's RAM when running: docker run --memory=512m --memory-swap=512m ...
+CMD ["python", "experiments/spike_memory_loop.py", "--episodes", "5"]

@@ -1,0 +1,5 @@
+# Desktop + Pi runtime deps for the Phase 0 harness.
+# ViZDoom ships aarch64 manylinux wheels (Python 3.9+); if your Python has no wheel,
+# create a 3.11/3.12 venv.
+vizdoom>=1.3.0
+numpy>=1.24

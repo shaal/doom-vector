@@ -1,0 +1,13 @@
+# Keep the arm64 build context small and arch-correct.
+# (dist/ is intentionally NOT ignored — the Dockerfile installs the arm64 wheel from it.)
+.venv/
+**/target/
+.git/
+__pycache__/
+**/__pycache__/
+*.pyc
+ruvector_store/
+*.rvf
+bridge/ruvector_py/dist/
+recordings/
+docs/

@@ -1,0 +1,23 @@
+[package]
+name = "ruvector_py"
+version = "0.1.0"
+edition = "2021"
+description = "PyO3 binding exposing ruvector-core as a native Python module"
+
+[lib]
+name = "ruvector_py"
+# cdylib -> a Python extension module (.so). No Node/runtime needed.
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3-py39: one wheel works on Python 3.9+ (matches ViZDoom's aarch64 wheels
+# and whatever Python the Pi OS ships). Bump pyo3 if your Rust/Python combo
+# needs it.
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"] }
+ruvector-core = "2.2.0"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

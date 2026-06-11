@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+*.whl
+
+# Rust
+target/
+bridge/**/target/
+
+# Native modules
+*.so
+*.pyd
+
+# RuVector on-disk stores
+ruvector_store/
+*.rvf
+
+# ViZDoom recordings + auto-generated engine config
+*.lmp
+recordings/
+_vizdoom.ini
