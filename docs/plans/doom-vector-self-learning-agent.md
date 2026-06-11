@@ -223,7 +223,14 @@ Both were built, verified to run, and *underperformed Phase 1's reactive value-r
 - **Speed (Pi-relevant, important):** Option B's Rust rollout = **14 ms/decision (71/s) on x86** (8 actions, horizon 4 → 256 searches/decision). An A53 at 1 GHz is ~15–30× slower → **~3–5 decisions/s on the Pi**, below the ~9/s needed for real-time at frameskip 4. So **B is borderline-to-not-viable for real-time on the Pi**; `my_way_home` (32 actions, ~4 s/decision) is out. Cost is quadratic in action count. A reactive **value-vote is 1 search/decision** — trivially Pi-real-time. WorldModel memory is currently unbounded (no eviction); RSS grew ~5 MiB/25 ep.
 - **Known minor issues (Option B):** WorldModel has no eviction yet; `unknown_dist` filtering uses an inverted comparison for the cosine metric (harmless at the default `f32::MAX`, wrong if set).
 
-**Recommendation / next:** build the **closed-loop reactive value-vote** on the navigation encoder — pick the action whose recalled neighbors had the best return-to-go. It is the proven Phase-1 mechanism, supplies the value signal A and B lacked, and is fast enough for the Pi (1 search/decision). Then Tier 3 on the real Pi Zero 2 W.
+**Phase 2 follow-up — value signal added, *still* flat on `health_gathering` (2026-06-10).**
+Both fixes were built and tested: (1) the **reactive value-vote** on the navigation encoder (`train.py --encoder navigation`), and (2) **Option B v2**, a **value-bootstrapped 1-step Bellman backup** (`score(a) = r + γ·V(s')`, `world_model.rs` rewritten; V = best recalled return-to-go). On `health_gathering`:
+- Reactive vote: 376 (random) → drifts to ~320, *below* the random baseline. Does not learn.
+- B v2: 284 → ~320; the value bootstrap **fixed the no-op collapse** (it no longer sits at exactly 284) but there is no learning trend.
+
+**Diagnosis — state representation, not the planner:** (a) the navigation encoder **omits HEALTH**, the decisive survival variable, so two states at the same pose but different health are indistinguishable to recall; (b) in a survival task, **return-to-go is confounded with time-/health-remaining** rather than action quality, so value-by-recall is noisy. `basic` worked because the structured encoder captured the decisive variable (monster position) and reward was cleanly tied to the action.
+
+**Recommendation / next:** either (i) **fix the encoder** — add HEALTH (+ kit bearing) and retry the reactive vote; or (ii) switch to a **distance-shaped scenario** (`deadly_corridor`) where return-to-go tracks navigation progress, a cleaner value signal; or (iii) **consolidate** — `basic` is a working, Pi-viable demo, so go to **Tier 3 on the real Pi Zero 2 W**. What demonstrably works today: `basic` (combat, structured encoder, reactive value recall).
 
 ## 8. Sources
 - ViZDoom: https://github.com/Farama-Foundation/ViZDoom · https://vizdoom.farama.org/

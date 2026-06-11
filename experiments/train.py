@@ -63,7 +63,7 @@ def run_episode(game, actions, enc, store, *, epsilon, k, frameskip, learn, gamm
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", default="basic")
-    ap.add_argument("--encoder", choices=["thumbnail", "structured"], default="structured")
+    ap.add_argument("--encoder", choices=["thumbnail", "structured", "navigation"], default="structured")
     ap.add_argument("--episodes", type=int, default=300)
     ap.add_argument("--eval-every", type=int, default=25)
     ap.add_argument("--eval-episodes", type=int, default=10)
@@ -81,10 +81,11 @@ def main() -> None:
 
     rng = random.Random(args.seed)
     decay = args.eps_decay_episodes or int(args.episodes * 0.7)
-    use_labels = args.encoder == "structured"
+    use_labels = args.encoder in ("structured", "navigation")
+    use_position = args.encoder == "navigation"
     store_path = args.store or os.path.join(tempfile.gettempdir(), f"dv_train_{os.getpid()}.rvf")
 
-    game = make_game(args.scenario, labels=use_labels)
+    game = make_game(args.scenario, labels=use_labels, position=use_position)
     actions = discrete_actions(game)
     enc, dim = make_encoder(args.encoder, game)
     store = ExperienceStore(dim=dim, storage_path=store_path, capacity=args.capacity)
