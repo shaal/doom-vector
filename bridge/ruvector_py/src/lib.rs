@@ -16,7 +16,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use ruvector_core::types::{DbOptions, SearchQuery, VectorEntry};
+use ruvector_core::types::{DbOptions, HnswConfig, SearchQuery, VectorEntry};
 use ruvector_core::VectorDB;
 
 #[pyclass]
@@ -27,11 +27,14 @@ struct RuVectorMemory {
 #[pymethods]
 impl RuVectorMemory {
     #[new]
-    #[pyo3(signature = (dimensions, storage_path=None))]
-    fn new(dimensions: usize, storage_path: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (dimensions, storage_path=None, max_elements=100_000))]
+    fn new(dimensions: usize, storage_path: Option<String>, max_elements: usize) -> PyResult<Self> {
+        // HnswConfig::default() pre-allocates for 10M elements (~661 MB) — fatal
+        // on a 512 MB device. Bound it; the graph grows as needed within this cap.
         let opts = DbOptions {
             dimensions,
             storage_path: storage_path.unwrap_or_else(|| "./ruvector_store".to_string()),
+            hnsw_config: Some(HnswConfig { max_elements, ..Default::default() }),
             ..Default::default()
         };
         let db = VectorDB::new(opts)

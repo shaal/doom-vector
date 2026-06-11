@@ -236,7 +236,25 @@ Both fixes were built and tested: (1) the **reactive value-vote** on the navigat
 
 **The winning recipe is reactive value-weighted per-step recall over RuVector with an adequate state encoding.** Three learning scenarios now: `basic` (combat, structured encoder), `health_gathering` (survival, nav encoder + HEALTH), `deadly_corridor` (navigation, nav encoder). All native backend, 1 search/decision, Pi-viable (~45–80 MiB). Open-loop replay (A) and reward-sum rollout (B) were the wrong mechanisms.
 
-**Next:** Tier 3 on the real Pi Zero 2 W — multiple working, lightweight scenarios to demo (incl. a navigation one).
+**Tier 3 — REAL hardware results on the Cognitum Seed (Pi Zero 2 W, 2026-06-11).**
+The Seed runs **32-bit Raspbian (armv7l / armhf)**, not the assumed 64-bit. Running the RuVector brain on it took three fixes (all now in the binding):
+1. **Cross-build for `armv7-unknown-linux-gnueabihf`** (maturin + zig) → a 1.9 MB armv7 wheel (no prebuilt 32-bit ARM wheels exist for anything in the stack).
+2. **Bound `HnswConfig.max_elements`** — the default is **10,000,000**, which pre-allocates **~661 MB** and instantly OOMs a 512 MB device. Exposed `max_elements` (default 100k) on `RuVectorMemory`/`WorldModel`.
+3. **Disable the `simd` feature** — `ruvector-core`'s `simsimd` C kernels **SIGSEGV on armv7** during distance/search. The pure-Rust scalar fallback fixes it (negligible at dim 8); HNSW kept (its `anndists` has no SIMD).
+
+Benchmark on the real A53 (dim-8 nav-encoder states, k=16 — the reactive value-vote = **1 search/decision**):
+
+| store size | RSS | recall throughput |
+|---|---|---|
+| 5k | 17.8 MiB | 358/s (2.8 ms) |
+| 20k | 40.4 MiB | 305/s (3.3 ms) |
+| 50k | 86.5 MiB | 271/s (3.7 ms) |
+
+**Both Tier-3 gates pass on real hardware:** RSS is modest (~40 MiB at our 20k experiment scale), and recall is **~270–510 decisions/s — ~30–55× the ~9/s real-time bar**. The self-learning brain is comfortably real-time on a $15 32-bit Pi. (The 100k checkpoint hit `No space left on device` — the redb store filled `/tmp`; bound the store or use a roomier path on-device.)
+
+**Still open:** ViZDoom has **no 32-bit ARM wheel**, so running the *environment* on the Seed needs a 64-bit Pi OS (our aarch64 wheel + ViZDoom's aarch64 wheel are both verified) or an armhf source build. The brain is proven on-device regardless; the watchable Doom video is produced on the desktop.
+
+**Next:** to close the full on-device loop, run on 64-bit Pi OS (so ViZDoom installs); or keep env-on-desktop + brain-on-Seed as a split demo.
 
 ## 8. Sources
 - ViZDoom: https://github.com/Farama-Foundation/ViZDoom · https://vizdoom.farama.org/

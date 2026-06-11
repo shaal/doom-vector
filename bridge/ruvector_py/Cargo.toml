@@ -14,7 +14,11 @@ crate-type = ["cdylib"]
 # and whatever Python the Pi OS ships). Bump pyo3 if your Rust/Python combo
 # needs it.
 pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"] }
-ruvector-core = "2.2.0"
+# Drop the default `simd` feature: its `simsimd` C kernels SEGFAULT on 32-bit ARM
+# (armv7). The pure-Rust scalar distance fallback is used instead — negligible
+# cost for our low-dim vectors, and it works on every arch. Also drop
+# `api-embeddings` (pulls reqwest/ring — unused, and 32-bit-risky).
+ruvector-core = { version = "2.2.0", default-features = false, features = ["storage", "hnsw", "parallel"] }
 serde_json = "1"
 
 [profile.release]

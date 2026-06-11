@@ -3,6 +3,21 @@
 Only the real device settles the two gates: **does the stack fit in 512 MB**, and
 **does recall keep up with the game**.
 
+> ## Results from the real device (Cognitum Seed, 2026-06-11)
+> The Seed runs **32-bit Raspbian (armv7l/armhf)**, not 64-bit. The RuVector brain
+> runs on it after three fixes (all now in the binding); benchmarked on the A53:
+> **~40 MiB at 20k experiences, ~270–510 recall/s** (≈ decisions/s — far above the
+> ~9/s real-time bar). The brain is comfortably real-time. Gotchas discovered:
+> 1. **No 32-bit ARM wheels** for the stack → cross-build the binding for
+>    `armv7-unknown-linux-gnueabihf` (maturin + zig), not aarch64.
+> 2. **`HnswConfig.max_elements` defaults to 10M** → ~661 MB pre-alloc → OOM. Pass a
+>    small `max_elements` (the binding now defaults to 100k).
+> 3. **`simsimd` SIGSEGVs on armv7** → build `ruvector-core` with
+>    `default-features=false` (no `simd`); scalar distance is free at low dim.
+> 4. **ViZDoom has no 32-bit wheel** → to run the *environment* on the Pi you need
+>    **64-bit Pi OS** (below) or an armhf source build. The brain works on 32-bit.
+> Cross-build for 32-bit: `maturin build --release --target armv7-unknown-linux-gnueabihf --zig -m bridge/ruvector_py/Cargo.toml --out dist`
+
 ## 1. Flash the OS
 - **64-bit Raspberry Pi OS Lite (Bookworm)** — 64-bit is required for the ViZDoom
   aarch64 wheel and NEON SIMD; Lite (no desktop) saves ~100+ MB RAM.

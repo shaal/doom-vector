@@ -18,7 +18,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use serde_json::json;
 
-use ruvector_core::types::{DbOptions, SearchQuery, VectorEntry};
+use ruvector_core::types::{DbOptions, HnswConfig, SearchQuery, VectorEntry};
 use ruvector_core::VectorDB;
 
 #[pyclass]
@@ -66,14 +66,22 @@ impl WorldModel {
 #[pymethods]
 impl WorldModel {
     #[new]
-    #[pyo3(signature = (n_actions, dim, storage_path=None, gamma=0.99))]
-    fn new(n_actions: usize, dim: usize, storage_path: Option<String>, gamma: f32) -> PyResult<Self> {
+    #[pyo3(signature = (n_actions, dim, storage_path=None, gamma=0.99, max_elements=100_000))]
+    fn new(
+        n_actions: usize,
+        dim: usize,
+        storage_path: Option<String>,
+        gamma: f32,
+        max_elements: usize,
+    ) -> PyResult<Self> {
         let prefix = storage_path.unwrap_or_else(|| "./wm_store".to_string());
         let mut dbs = Vec::with_capacity(n_actions);
         for a in 0..n_actions {
+            // bound HNSW pre-allocation (default is 10M elems ~= 661 MB per index)
             let opts = DbOptions {
                 dimensions: dim,
                 storage_path: format!("{prefix}_a{a}"),
+                hnsw_config: Some(HnswConfig { max_elements, ..Default::default() }),
                 ..Default::default()
             };
             let db = VectorDB::new(opts)
