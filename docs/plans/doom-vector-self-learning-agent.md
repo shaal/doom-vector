@@ -256,6 +256,17 @@ Benchmark on the real A53 (dim-8 nav-encoder states, k=16 — the reactive value
 
 **Next:** to close the full on-device loop, run on 64-bit Pi OS (so ViZDoom installs); or keep env-on-desktop + brain-on-Seed as a split demo.
 
+**Tier 3 — FULL agent (ViZDoom + RuVector) runs AND learns on the 32-bit Seed (2026-06-11).**
+We then got the *environment* onto the Seed too (there is no 32-bit ViZDoom wheel anywhere):
+- **Cross-built a ViZDoom armhf wheel** by compiling from source in a QEMU `linux/arm/v7` Debian-**trixie** container on the desktop (matched the Seed's OS/Python 3.13 for ABI), with `-j<cores>` — far faster than a native A53 build → `vizdoom-1.3.0-cp313-cp313-linux_armv7l.whl`. (Needed `libboost-all-dev`; a native on-Seed build also works but is slow.)
+- **Fixed an empty `vizdoom.pk3`**: the container's build produced a 22-byte stub (missing zip step) → engine error "No IWAD definitions found". Copied the working 630 KB pk3 from the desktop install — it's arch-independent game data.
+- **numpy** from **piwheels** (`--extra-index-url https://www.piwheels.org/simple --only-binary numpy`) + `apt install libopenblas0-pthread` (its runtime).
+- **Switched the distance metric to Euclidean.** The default Cosine + scalar fallback (no `simsimd` on armv7) returns tiny *negative* distances for near-identical vectors, which panics `hnsw_rs` (`assertion failed: dist_to_ref <= 0`). L2 is always ≥ 0 and also matches the numpy fallback's metric.
+
+**Result on the Seed** (`basic`, structured encoder, reactive value-vote): **−118 (random) → +92 by episode 30**, holding ~+90; **~27 MiB RSS; 60 episodes + evals in 49 s** on the A53. The complete self-learning agent — environment *and* brain — runs and learns directly on a 32-bit \$15 Raspberry Pi.
+
+**Next:** scale on-device episodes / try a navigation scenario on the Seed; optionally a 64-bit Pi OS (avoids the armhf workarounds and re-enables SIMD). Filed [cognitum-one/support#60](https://github.com/cognitum-one/support/issues/60) asking why the Seed ships 32-bit and for a supported 64-bit path.
+
 ## 8. Sources
 - ViZDoom: https://github.com/Farama-Foundation/ViZDoom · https://vizdoom.farama.org/
 - RuVector: https://github.com/ruvnet/RuVector · `ruvector-sona` on crates.io

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use serde_json::json;
 
-use ruvector_core::types::{DbOptions, HnswConfig, SearchQuery, VectorEntry};
+use ruvector_core::types::{DbOptions, DistanceMetric, HnswConfig, SearchQuery, VectorEntry};
 use ruvector_core::VectorDB;
 
 #[pyclass]
@@ -81,6 +81,7 @@ impl WorldModel {
             let opts = DbOptions {
                 dimensions: dim,
                 storage_path: format!("{prefix}_a{a}"),
+                distance_metric: DistanceMetric::Euclidean,  // L2: robust on the scalar (no-simd) armv7 build
                 hnsw_config: Some(HnswConfig { max_elements, ..Default::default() }),
                 ..Default::default()
             };

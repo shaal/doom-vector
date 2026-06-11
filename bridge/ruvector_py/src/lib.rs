@@ -16,7 +16,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use ruvector_core::types::{DbOptions, HnswConfig, SearchQuery, VectorEntry};
+use ruvector_core::types::{DbOptions, DistanceMetric, HnswConfig, SearchQuery, VectorEntry};
 use ruvector_core::VectorDB;
 
 #[pyclass]
@@ -34,6 +34,11 @@ impl RuVectorMemory {
         let opts = DbOptions {
             dimensions,
             storage_path: storage_path.unwrap_or_else(|| "./ruvector_store".to_string()),
+            // Euclidean (L2): always >= 0. The default Cosine + scalar fallback (no
+            // simsimd on armv7) can return tiny NEGATIVE distances for near-identical
+            // vectors (float error makes sim > 1), which panics hnsw_rs. L2 also
+            // matches the numpy fallback's metric.
+            distance_metric: DistanceMetric::Euclidean,
             hnsw_config: Some(HnswConfig { max_elements, ..Default::default() }),
             ..Default::default()
         };

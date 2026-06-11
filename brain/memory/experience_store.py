@@ -20,6 +20,21 @@ from __future__ import annotations
 import numpy as np
 
 
+def _nonzero(vector) -> np.ndarray:
+    """Return a float32 copy guaranteed to have non-zero norm.
+
+    A zero-norm vector makes cosine distance 0/0 = NaN, which trips an
+    assertion deep in hnsw_rs (seen only with the scalar distance fallback used
+    on 32-bit ARM, where simsimd is disabled). Degenerate all-zero states carry
+    no recall signal anyway, so we nudge one component.
+    """
+    v = np.asarray(vector, dtype=np.float32)
+    if not v.any():
+        v = v.copy()
+        v[0] = 1.0
+    return v
+
+
 class ExperienceStore:
     def __init__(
         self,
@@ -55,7 +70,7 @@ class ExperienceStore:
 
     # --- write ---------------------------------------------------------------
     def insert(self, vector, metadata: dict | None = None) -> None:
-        v = np.asarray(vector, dtype=np.float32)
+        v = _nonzero(vector)
         md = metadata or {}
         val = float(md.get("return", 0.0))
         if self.backend == "native":
@@ -92,7 +107,7 @@ class ExperienceStore:
         fallback returns negative L2 distance (higher = closer) so both
         backends agree on "bigger score == more similar".
         """
-        v = np.asarray(vector, dtype=np.float32)
+        v = _nonzero(vector)
         if self.backend == "native":
             return [(r[0], r[1], r[2]) for r in self._impl.search(v.tolist(), k)]
 
