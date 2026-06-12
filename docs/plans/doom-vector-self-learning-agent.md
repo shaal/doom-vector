@@ -265,7 +265,15 @@ We then got the *environment* onto the Seed too (there is no 32-bit ViZDoom whee
 
 **Result on the Seed** (`basic`, structured encoder, reactive value-vote): **−118 (random) → +92 by episode 30**, holding ~+90; **~27 MiB RSS; 60 episodes + evals in 49 s** on the A53. The complete self-learning agent — environment *and* brain — runs and learns directly on a 32-bit \$15 Raspberry Pi.
 
-**Next:** scale on-device episodes / try a navigation scenario on the Seed; optionally a 64-bit Pi OS (avoids the armhf workarounds and re-enables SIMD). Filed [cognitum-one/support#60](https://github.com/cognitum-one/support/issues/60) asking why the Seed ships 32-bit and for a supported 64-bit path.
+**Next:** (done — see the SCALE entry below) optionally a 64-bit Pi OS (avoids the armhf workarounds and re-enables SIMD). Filed [cognitum-one/support#60](https://github.com/cognitum-one/support/issues/60) asking why the Seed ships 32-bit and for a supported 64-bit path.
+
+**Tier 3 — SCALE: both navigation scenarios learn on-device at 20k-experience scale (2026-06-11).**
+Ran the full agent (ViZDoom + RuVector, navigation encoder = dim 8, headless `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`, store on **rootfs** not the 32 MB `/tmp`) on the Seed across longer runs and harder scenarios. Both learn on the A53, and the memory bound holds under sustained eviction:
+- **`deadly_corridor`** (128 actions, cap 20k), **2 seeds**: random −29 / −49 → peaks **+263 / +218** by ep 125–150 — reproduces the desktop +330 result on-device. RSS flat **27 → 36 MiB** (mem ~8k); **~0.5 episodes/s** (220 episodes incl. evals in ~370–430 s). Greedy-eval is high-variance — single eval points swing hard (seed 0 ep150 dipped to +7.5) — so learning is read from the trend + peaks, not one converged number.
+- **`health_gathering`** (survival, HEALTH-aware encoder, cap 20k): random +354 → peak **+1097** (ep 100), noisy (ep125 +322). Memory climbed to the **20k cap → value-based eviction engaged, RSS bounded at 51 MiB, no OOM** as the complete agent on the 512 MB device. **~0.17 episodes/s** (long survival episodes).
+- **Eviction-churn stress** (`deadly_corridor`, cap 3000): memory pinned **exactly at 3000** for 75 episodes of continuous churn; RSS crept slowly **30.1 → 32.9 MiB (~37 KB/episode)** — bounded, no OOM, but a measurable HNSW-**tombstone** effect (deletes tombstone; RAM is reclaimed only on compaction, as the `experience_store` docstring warns). Negligible for hundreds-of-episode runs; a real concern only for very long (thousands-of-episode) runs, where a periodic store compaction/rebuild is the fix. Bonus: even a 3000-experience memory learns the corridor (−37 → +272).
+
+**Both Tier-3 scale gates pass:** RSS stays well within the 512 MB budget (**≤51 MiB at the 20k cap**, full agent), and memory is hard-bounded by the cap. The winning recipe — reactive value-weighted per-step recall over RuVector with an adequate state encoding — scales to navigation scenarios on real 32-bit hardware. (Runs driven over the maintainer-local SSH helper; the reproducible part is the `train.py --scenario {deadly_corridor,health_gathering} --encoder navigation --capacity 20000 --store ~/dvstore.rvf` invocation.)
 
 ## Next steps (planned)
 
@@ -274,16 +282,13 @@ Queued for a future session. The Seed is reached via the SSH helper in the paren
 repo); the agent code + venv are already deployed on the Seed under `~/doom-vector`
 and `~/dv-bench`.
 
-### A. Scale on-device
-Push past the 60-episode `basic` smoke — longer runs and a navigation scenario,
-measuring learning + RAM + throughput at scale on the A53.
-- Run `train.py` on the Seed headless (`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`),
-  store on **rootfs** (`--store ~/dvstore.rvf`), NOT the 32 MB `/tmp` tmpfs; keep
-  `--capacity` modest (≤ 20k — the Seed shares ~300 MB free with its agent stack).
-- Try `deadly_corridor` (nav encoder; distance-shaped reward — learned +330 on
-  desktop) and `health_gathering` (nav encoder, HEALTH already included) on-device.
-- Capture: eval curve, RSS-at-scale, episodes/sec on the A53. Watch for OOM; the
-  store/HNSW is bounded (`max_elements`) but verify under longer runs.
+### A. Scale on-device — DONE (2026-06-11, see the Tier-3 SCALE entry in §9)
+Pushed past the 60-episode `basic` smoke: ran `deadly_corridor` (2 seeds) and
+`health_gathering` at 150 episodes each, plus an eviction-churn stress run, on the
+real Seed — headless, store on rootfs, `--capacity` 20k/3k. Both navigation scenarios
+learn on the A53; RSS stays ≤51 MiB at the 20k cap; memory is hard-bounded by the cap
+(eviction verified at two cap sizes); no OOM. The only caveat is a slow HNSW-tombstone
+RSS creep (~37 KB/episode) under sustained eviction — negligible except on very long runs.
 
 ### B. Record an on-device gameplay GIF (rendered on the Seed)
 A clip rendered on the Seed itself (vs the current desktop GIF).
