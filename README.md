@@ -8,6 +8,10 @@ A self-learning Doom agent built on **ViZDoom** (environment) + **RuVector** (`r
 
 *Above: a greedy `deadly_corridor` episode after ~150 episodes of learning — the agent navigates by reward-weighted recall over RuVector, with no trained network. The same brain runs real-time on a 32-bit Raspberry Pi Zero 2 W (see Tier 3 below).*
 
+![deadly_corridor trained and rendered on the 32-bit Pi Zero 2 W](demo_seed_deadly_corridor.gif)
+
+*Above: the same scenario **trained for 150 episodes and rendered entirely on the actual 32-bit Pi Zero 2 W** ("Cognitum Seed") — best greedy run +251. Frames come straight from the Seed's headless ViZDoom (`screen_buffer` fills with no display); only the GIF muxing happens on the desktop. This is the on-hardware counterpart to the higher-res desktop clip above.*
+
 See [`docs/plans/doom-vector-self-learning-agent.md`](docs/plans/doom-vector-self-learning-agent.md) for the full design, rationale, and roadmap.
 
 ## Repo layout

@@ -50,7 +50,31 @@ def main() -> None:
     ap.add_argument("--fps", type=int, default=10)
     ap.add_argument("--downscale", type=int, default=2)
     ap.add_argument("--max-frames", type=int, default=300)
+    ap.add_argument(
+        "--save-npz",
+        default=None,
+        help="save the best episode's raw frames to this .npz and skip GIF encoding "
+        "(numpy-only; lets a pillow-less device like the Pi capture frames, then "
+        "encode the GIF elsewhere with --from-npz)",
+    )
+    ap.add_argument(
+        "--from-npz",
+        default=None,
+        help="encode a GIF (to --out) from frames saved by --save-npz, then exit "
+        "(no game/training; run this on a desktop)",
+    )
     args = ap.parse_args()
+
+    if args.from_npz:
+        data = np.load(args.from_npz)
+        frames = list(data["frames"])
+        imageio.mimsave(args.out, frames, fps=args.fps)
+        print(
+            f"saved {args.out} ({os.path.getsize(args.out) / 1024:.0f} KiB, "
+            f"{len(frames)} frames) from {args.from_npz}",
+            flush=True,
+        )
+        return
 
     rng = random.Random(args.seed)
     game = make_game(
@@ -97,7 +121,9 @@ def main() -> None:
                 break
             if len(frames) < args.max_frames:
                 img = to_hwc(s.screen_buffer)
-                frames.append(img[:: args.downscale, :: args.downscale])
+                # copy the downscaled frame so we don't pin the full-res buffer
+                # (a strided view keeps its 320x240 base alive — adds up on 512 MB).
+                frames.append(np.ascontiguousarray(img[:: args.downscale, :: args.downscale]))
             a = choose_action(store.search(enc(s), args.k), len(actions), epsilon=0.0, rng=rng)
             game.make_action(actions[a], args.frameskip)
         total = game.get_total_reward()
@@ -110,6 +136,18 @@ def main() -> None:
     if not frames:
         print("no frames captured")
         return
+
+    if args.save_npz:
+        # numpy-only path: no pillow/GIF deps needed (e.g. on the Pi). Encode the
+        # GIF later/elsewhere with `record_demo.py --from-npz <this file>`.
+        np.savez_compressed(args.save_npz, frames=np.stack(frames))
+        print(
+            f"saved {args.save_npz} ({os.path.getsize(args.save_npz)/1024:.0f} KiB, "
+            f"{len(frames)} frames, reward={total:+.1f})",
+            flush=True,
+        )
+        return
+
     imageio.mimsave(args.out, frames, fps=args.fps)
     print(f"saved {args.out} ({os.path.getsize(args.out)/1024:.0f} KiB, {len(frames)} frames, reward={total:+.1f})", flush=True)
 

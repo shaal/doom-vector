@@ -275,6 +275,8 @@ Ran the full agent (ViZDoom + RuVector, navigation encoder = dim 8, headless `SD
 
 **Both Tier-3 scale gates pass:** RSS stays well within the 512 MB budget (**≤51 MiB at the 20k cap**, full agent), and memory is hard-bounded by the cap. The winning recipe — reactive value-weighted per-step recall over RuVector with an adequate state encoding — scales to navigation scenarios on real 32-bit hardware. (Runs driven over the maintainer-local SSH helper; the reproducible part is the `train.py --scenario {deadly_corridor,health_gathering} --encoder navigation --capacity 20000 --store ~/dvstore.rvf` invocation.)
 
+**Tier 3 — GIF rendered on the Seed (2026-06-12).** Produced `demo_seed_deadly_corridor.gif` (embedded in the README) **trained and rendered entirely on the 32-bit Seed**. Key finding: **ViZDoom fills `screen_buffer` headless** even under `SDL_VIDEODRIVER=dummy` (probe: 320×240×3, max 227, mean 34) — the engine's software renderer needs no display, so **`xvfb` is unnecessary**. To avoid a pillow/`libopenjp2` system install on the device, `record_demo.py` gained a numpy-only `--save-npz` capture mode (Seed) + a `--from-npz` GIF-encode mode (desktop) — the plan's "capture on-device, mux on desktop" path. The Seed trained 150 `deadly_corridor` episodes and recorded a best greedy run of **+251**; frames are the Seed's, only the GIF muxing is on x86. (Also fixed a frame-buffer RAM-pinning bug — strided views kept the full 320×240 buffers alive.)
+
 ## Next steps (planned)
 
 Queued for a future session. The Seed is reached via the SSH helper in the parent
@@ -290,18 +292,12 @@ learn on the A53; RSS stays ≤51 MiB at the 20k cap; memory is hard-bounded by 
 (eviction verified at two cap sizes); no OOM. The only caveat is a slow HNSW-tombstone
 RSS creep (~37 KB/episode) under sustained eviction — negligible except on very long runs.
 
-### B. Record an on-device gameplay GIF (rendered on the Seed)
-A clip rendered on the Seed itself (vs the current desktop GIF).
-- `experiments/record_demo.py` already grabs RGB frames headlessly. **Open question:**
-  whether ViZDoom fills `screen_buffer` with no display. We ran training with
-  `SDL_VIDEODRIVER=dummy`, which likely yields blank frames — so the first step is
-  rendering headless: most reliable is **`xvfb-run`** (a virtual framebuffer:
-  `sudo apt install xvfb`, then `xvfb-run -a python experiments/record_demo.py ...`).
-- Install `imageio` + `pillow` in the Seed venv (`--extra-index-url https://www.piwheels.org/simple`).
-- Likely cheapest path: capture frames on the Seed → copy raw frames back to the
-  desktop → encode the GIF on the desktop (avoids heavy encoding on the A53).
-- Deliverable: `demo_seed_<scenario>.gif`, committed + embedded in the README as the
-  "rendered on the actual Seed" artifact.
+### B. Record an on-device gameplay GIF (rendered on the Seed) — DONE (2026-06-12, see the Tier-3 GIF entry in §9)
+`demo_seed_deadly_corridor.gif` is rendered on the Seed and embedded in the README.
+The open question is settled: **ViZDoom fills `screen_buffer` headless** (no display /
+no `xvfb` needed) even under `SDL_VIDEODRIVER=dummy`. `record_demo.py --save-npz`
+captures raw frames on the device with numpy only (no pillow/`libopenjp2` system
+install), then `record_demo.py --from-npz` muxes the GIF on the desktop.
 
 ### C. (optional) Go 64-bit
 If [cognitum-one/support#60](https://github.com/cognitum-one/support/issues/60)
