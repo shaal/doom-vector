@@ -35,6 +35,13 @@ def _nonzero(vector) -> np.ndarray:
     return v
 
 
+def _meta_matches(meta: dict, filter: dict) -> bool:
+    """All filter keys present in `meta` with equal value — mirrors native
+    ruvector-core's exact `serde_json::Value` equality post-filter. Float values
+    come from the same source on both sides (e.g. 1.0), so `==` is faithful."""
+    return all(meta.get(key) == value for key, value in filter.items())
+
+
 class ExperienceStore:
     def __init__(
         self,
@@ -100,23 +107,76 @@ class ExperienceStore:
             del self._vals[i]
 
     # --- read ----------------------------------------------------------------
-    def search(self, vector, k: int = 8) -> list[tuple[str, float, dict]]:
+    def search(
+        self,
+        vector,
+        k: int = 8,
+        *,
+        filter: dict | None = None,
+        over_fetch: int = 4,
+        diversify: bool = False,
+        mmr_lambda: float = 0.5,
+    ) -> list[tuple[str, float, dict]]:
         """Return up to k (id, score, metadata) tuples, nearest first.
 
         Native scores come from ruvector-core's distance metric. The numpy
         fallback returns negative L2 distance (higher = closer) so both
         backends agree on "bigger score == more similar".
+
+        Track 1 (Aim) adds three composable knobs, all encapsulated here so the
+        public contract stays a 3-tuple (`choose_action` is unchanged):
+
+        - ``filter``: exact-match metadata filter (e.g. ``{"enemy_visible": 1.0}``)
+          so the aim vote is advised only by relevant frames. ruvector-core
+          applies it as a *post-filter* over the k-NN hits, so it returns ≤ k.
+        - ``over_fetch``: when filtering or diversifying, search a larger
+          ``k_raw = k * over_fetch`` so the post-filter / MMR has a pool to work
+          with instead of starving the vote.
+        - ``diversify``: MMR-rerank the over-fetched pool down to a *diverse* k
+          (see ``brain.policy.mmr``), so a cluster of near-duplicate neighbours
+          can't dominate the vote.
         """
         v = _nonzero(vector)
-        if self.backend == "native":
-            return [(r[0], r[1], r[2]) for r in self._impl.search(v.tolist(), k)]
+        need_pool = bool(filter) or diversify
+        k_raw = max(k, k * over_fetch) if need_pool else k
 
+        if self.backend == "native":
+            # The native bridge applies `filter` server-side and returns the
+            # candidate vector only when we ask (with_vectors), keeping the
+            # no-MMR path cheap on the Pi.
+            raw = self._impl.search(v.tolist(), k_raw, filter, with_vectors=diversify)
+            cands = [(r[0], r[1], r[2], r[3]) for r in raw]
+        else:
+            cands = self._search_numpy(v, k_raw, filter, with_vectors=diversify)
+
+        if diversify and len(cands) > k:
+            from brain.policy.mmr import mmr_rerank
+
+            cands = mmr_rerank(v, cands, k, lam=mmr_lambda)
+        else:
+            cands = cands[:k]
+
+        # Strip the (internal-only) candidate vector back to the public 3-tuple.
+        return [(c[0], c[1], c[3]) for c in cands]
+
+    def _search_numpy(self, v, k_raw, filter, with_vectors):
+        """Numpy fallback that mirrors native ordering: k-NN to k_raw first, then
+        post-filter (so it returns ≤ k_raw, possibly fewer — exactly like
+        ruvector-core's `results.retain`). Returns 4-tuples (id, score, vector,
+        metadata); `vector` is None unless `with_vectors`."""
         if not self._vecs:
             return []
         mat = np.stack(self._vecs)
         d = np.linalg.norm(mat - v, axis=1)
-        idx = np.argsort(d)[:k]
-        return [(str(i), float(-d[i]), self._meta[i]) for i in idx]
+        idx = np.argsort(d)[:k_raw]
+        out = []
+        for i in idx:
+            meta = self._meta[i]
+            if filter and not _meta_matches(meta, filter):
+                continue
+            vec = self._vecs[i].tolist() if with_vectors else None
+            out.append((str(i), float(-d[i]), vec, meta))
+        return out
 
     def __len__(self) -> int:
         return len(self._index) if self.backend == "native" else len(self._vecs)

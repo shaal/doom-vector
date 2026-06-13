@@ -66,10 +66,38 @@ impl RuVectorMemory {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("ruvector: {e}")))
     }
 
-    /// k-NN search. Returns a list of (id, score, metadata-dict) tuples.
-    #[pyo3(signature = (vector, k=8))]
-    fn search(&self, py: Python<'_>, vector: Vec<f32>, k: usize) -> PyResult<Py<PyList>> {
-        let query = SearchQuery { vector, k, filter: None, ef_search: None };
+    /// k-NN search. Returns a list of (id, score, vector, metadata-dict) tuples.
+    ///
+    /// `filter` is an exact-match metadata post-filter: `VectorDB::search` runs
+    /// k-NN for the full `k` first, then drops hits whose metadata doesn't match
+    /// (`vector_db.rs` `results.retain(...)`), so a filtered query returns *≤ k*.
+    /// Callers that need a stable result count must over-fetch (search a larger
+    /// `k`) and let the filter prune down — see `ExperienceStore.search`.
+    ///
+    /// The stored metadata is `json!(f64)`, so each filter value is wrapped the
+    /// same way to match under serde_json's exact `Value` equality.
+    ///
+    /// `vector` is `None` in each tuple unless `with_vectors=True`; marshalling
+    /// the full vector back to Python costs CPU on the hot path (one Python list
+    /// per hit, every decision), so it is opt-in — only MMR re-ranking, which
+    /// needs candidate vectors to measure diversity, turns it on.
+    #[pyo3(signature = (vector, k=8, filter=None, with_vectors=false))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        vector: Vec<f32>,
+        k: usize,
+        filter: Option<HashMap<String, f64>>,
+        with_vectors: bool,
+    ) -> PyResult<Py<PyList>> {
+        // Build the filter the same way the write path stores metadata
+        // (`json!(f64)`), so exact `serde_json::Value` equality matches.
+        let filter = filter.map(|m| {
+            m.into_iter()
+                .map(|(k, v)| (k, serde_json::json!(v)))
+                .collect::<HashMap<String, serde_json::Value>>()
+        });
+        let query = SearchQuery { vector, k, filter, ef_search: None };
         let results = self
             .db
             .search(query)
@@ -85,7 +113,10 @@ impl RuVectorMemory {
                     }
                 }
             }
-            out.append((r.id, r.score, md))?;
+            // Option<Vec<f32>> -> Python list or None, gated on with_vectors so
+            // the no-MMR hot path never pays the marshalling cost.
+            let vec_out: Option<Vec<f32>> = if with_vectors { r.vector } else { None };
+            out.append((r.id, r.score, vec_out, md))?;
         }
         Ok(out.into())
     }

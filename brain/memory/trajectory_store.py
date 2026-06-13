@@ -73,7 +73,9 @@ class TrajectoryStore:
         v = np.asarray(vector, dtype=np.float32)
         out: list[tuple[int, int, float, float]] = []
         if self.backend == "native":
-            for _id, score, md in self._impl.search(v.tolist(), k):
+            # The bridge returns (id, score, vector, metadata); the vector is
+            # None here (with_vectors defaults False) and unused by trajectories.
+            for _id, score, _vec, md in self._impl.search(v.tolist(), k):
                 out.append((int(md["traj_id"]), int(md["step_idx"]), md.get("step_value", 0.0), score))
             return out
         if not self._vecs:

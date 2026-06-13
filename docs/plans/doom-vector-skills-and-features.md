@@ -192,7 +192,7 @@ One checkbox per track, in the §6 dependency order. Each ships as its own
 quality-gated PR; honor the `depends:` notes — don't start a task whose
 dependency is still unchecked. Sub-bullets are scope, not separate tasks.
 
-- [ ] **Track 1 — Aim (`defend_the_center`).** depends: none. (see §2 + §0.5)
+- [x] **Track 1 — Aim (`defend_the_center`).** depends: none. (see §2 + §0.5)
   - Bridge: turn on `SearchQuery.filter` with over-fetch (`k_raw = k * over_fetch`) so the post-filter doesn't starve the value vote; add MMR-diverse re-ranking.
   - Policy: aim/threat encoder dims + small hit-bonus reward shaping (eval on the *unshaped* scenario score).
   - Done when: the agent measurably learns to shoot on `defend_the_center` and the filtered-recall + reward-shaping pattern is reusable by later tracks.

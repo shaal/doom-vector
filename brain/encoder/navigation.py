@@ -15,7 +15,6 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import vizdoom as vzd
 
 _POS_SCALE = 1000.0  # Doom map units -> ~O(1); only relative scale matters for k-NN
 _HEALTH_SCALE = 100.0
@@ -29,6 +28,10 @@ def navigation_dim(max_objects: int = 1) -> int:
 
 
 def make_nav_encoder(game, *, max_objects: int = 1, pos_scale: float = _POS_SCALE):
+    # Imported lazily so the encoder package is importable (and unit-testable)
+    # on machines without the ViZDoom engine; only nav recall needs it at runtime.
+    import vizdoom as vzd
+
     def enc(state):
         px = game.get_game_variable(vzd.GameVariable.POSITION_X) / pos_scale
         py = game.get_game_variable(vzd.GameVariable.POSITION_Y) / pos_scale
