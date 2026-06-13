@@ -17,13 +17,71 @@ import numpy as np
 _VAR_SCALE = 100.0
 _POS_SCALE = 320.0  # screen-ish coordinate scale
 
+# A label with this name is the agent itself, not a target. ViZDoom tags the
+# player's own body in the labels buffer; it must be excluded from "enemies".
+_SELF_NAME = "DoomPlayer"
 
-def structured_dim(n_game_vars: int, max_objects: int = 8) -> int:
-    return n_game_vars + max_objects * 4
+# Number of extra dims appended in aim mode: (enemy_dx, enemy_size, enemy_visible).
+AIM_DIMS = 3
 
 
-def encode_structured(state, n_game_vars: int, max_objects: int = 8) -> np.ndarray:
-    """Encode a ViZDoom `GameState` into a fixed-length float32 vector."""
+def structured_dim(n_game_vars: int, max_objects: int = 8, *, aim: bool = False) -> int:
+    return n_game_vars + max_objects * 4 + (AIM_DIMS if aim else 0)
+
+
+def _enemies(labels, self_name: str = _SELF_NAME):
+    """Visible enemy labels (everything except the agent), nearest-first by
+    screen area. ViZDoom labels expose `object_name`; older states without it
+    are treated as enemies (fail-open — better to aim than to ignore a threat)."""
+    enemies = [l for l in labels if getattr(l, "object_name", "") != self_name]
+    return sorted(enemies, key=lambda l: -(l.width * l.height))
+
+
+def enemy_visible(state, self_name: str = _SELF_NAME) -> float:
+    """1.0 if any non-self target is on screen, else 0.0. This is both an encoder
+    dimension and the recall filter key (`{"enemy_visible": 1.0}`), so it lives
+    here as the single source of truth shared by the encoder and the train loop."""
+    labels = getattr(state, "labels", None) or []
+    return 1.0 if _enemies(labels, self_name) else 0.0
+
+
+def aim_features(state, screen_w: float = _POS_SCALE, self_name: str = _SELF_NAME):
+    """Explicit aim signals for the nearest enemy: recall can't learn "pull the
+    trigger when lined up" unless alignment is a dimension.
+
+    Returns (enemy_dx, enemy_size, enemy_visible):
+      - enemy_dx:  horizontal offset of the nearest enemy from screen centre,
+                   normalized to ~[-1, 1] (≈0 ⇒ on target).
+      - enemy_size: screen-area fraction of that enemy — a monotonic closeness
+                    proxy (bigger ⇒ nearer) standing in for true distance.
+      - enemy_visible: 1.0 if any enemy is on screen, else 0.0.
+    """
+    labels = getattr(state, "labels", None) or []
+    enemies = _enemies(labels, self_name)
+    if not enemies:
+        return (0.0, 0.0, 0.0)
+    lab = enemies[0]
+    w = screen_w or 1.0  # guard a degenerate 0-width config (ViZDoom never 0)
+    cx = lab.x + lab.width / 2.0
+    half = w / 2.0
+    enemy_dx = (cx - half) / half
+    enemy_size = (lab.width * lab.height) / (w * w)
+    return (float(enemy_dx), float(enemy_size), 1.0)
+
+
+def encode_structured(
+    state,
+    n_game_vars: int,
+    max_objects: int = 8,
+    *,
+    aim: bool = False,
+    screen_w: float = _POS_SCALE,
+) -> np.ndarray:
+    """Encode a ViZDoom `GameState` into a fixed-length float32 vector.
+
+    With `aim=True`, three explicit aim dims (dx-to-target, target size, target
+    visible) are appended — the alignment signal the aim policy votes on, and the
+    `enemy_visible` flag used as the recall filter key (Track 1)."""
     gv = np.asarray(state.game_variables, dtype=np.float32)
     gv = np.resize(gv, n_game_vars) / _VAR_SCALE
 
@@ -38,4 +96,7 @@ def encode_structured(state, n_game_vars: int, max_objects: int = 8) -> np.ndarr
         type_hash = (lab.object_id % 97) / 97.0
         obj_feats[i] = (cx, cy, area, type_hash)
 
-    return np.concatenate([gv, obj_feats.reshape(-1)]).astype(np.float32)
+    parts = [gv, obj_feats.reshape(-1)]
+    if aim:
+        parts.append(np.asarray(aim_features(state, screen_w), dtype=np.float32))
+    return np.concatenate(parts).astype(np.float32)

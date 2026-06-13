@@ -15,7 +15,7 @@ from .structured import encode_structured, structured_dim
 from .thumbnail import encode_thumbnail
 
 
-def make_encoder(kind: str, game, *, thumb: int = 16, max_objects: int = 8):
+def make_encoder(kind: str, game, *, thumb: int = 16, max_objects: int = 8, aim: bool = False):
     if kind == "navigation":
         return make_nav_encoder(game, max_objects=max(1, max_objects // 8))
 
@@ -29,10 +29,14 @@ def make_encoder(kind: str, game, *, thumb: int = 16, max_objects: int = 8):
 
     if kind == "structured":
         n_vars = game.get_available_game_variables_size()
-        dim = structured_dim(n_vars, max_objects)
+        dim = structured_dim(n_vars, max_objects, aim=aim)
+        # Capture the true screen width so the aim dx-to-target is centred at 0
+        # for this resolution (the structured block's own normalizer is a fixed
+        # 320 "screen-ish" constant; aim needs the real centre).
+        screen_w = float(game.get_screen_width()) if aim else 320.0
 
         def enc(state):
-            return encode_structured(state, n_vars, max_objects)
+            return encode_structured(state, n_vars, max_objects, aim=aim, screen_w=screen_w)
 
         return enc, dim
 

@@ -40,13 +40,20 @@ pip install maturin && maturin develop --release -m bridge/ruvector_py/Cargo.tom
 # train on `basic` with the structured encoder; prints a greedy-eval learning curve
 python experiments/train.py --scenario basic --encoder structured --episodes 200 --eval-every 25
 
+# learn to *aim* on defend_the_center: adds aim encoder dims (dx-to-target,
+# target size, enemy-visible), enemy-visible–filtered + MMR-diverse recall, and a
+# small DAMAGECOUNT hit-bonus. Eval stays on the unshaped scenario score.
+python experiments/train.py --scenario defend_the_center --encoder structured --aim --episodes 300
+
 # record a greedy episode, then replay it in a window (on a desktop)
 python experiments/train.py --episodes 200 --record demo.lmp
 python experiments/replay.py demo.lmp --scenario basic
 ```
 
 The `structured` encoder (game variables + labeled-object geometry) beats the
-`thumbnail` pixel encoder decisively on `basic` — use it.
+`thumbnail` pixel encoder decisively on `basic` — use it. Add `--aim` (Track 1)
+to turn on metadata-filtered, MMR-diverse recall plus hit-bonus reward shaping
+for combat scenarios like `defend_the_center`.
 
 ## Phase 0 — validation tiers (emulate to build, Pi to prove)
 

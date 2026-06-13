@@ -22,13 +22,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import vizdoom as vzd  # noqa: E402
+
 from brain.encoder import make_encoder  # noqa: E402
+from brain.encoder.structured import enemy_visible  # noqa: E402
 from brain.memory.experience_store import ExperienceStore  # noqa: E402
 from brain.policy.episodic import (  # noqa: E402
     choose_action,
     discounted_returns,
     linear_epsilon,
 )
+from brain.policy.reward import damage_delta, hit_shaped_reward  # noqa: E402
 from envs.basic import discrete_actions, make_game  # noqa: E402
 
 
@@ -42,21 +46,45 @@ def rss_mb() -> float:
     return float("nan")
 
 
-def run_episode(game, actions, enc, store, *, epsilon, k, frameskip, learn, gamma, rng, record=None):
+def run_episode(
+    game, actions, enc, store, *, epsilon, k, frameskip, learn, gamma, rng,
+    aim=False, hit_bonus=0.0, record=None,
+):
+    """Run one episode.
+
+    With `aim=True` (Track 1): recall is *filtered* to enemy-visible memories
+    when an enemy is on screen and *MMR-diversified*, and — when `hit_bonus` is
+    set and we're learning — the per-step reward is shaped by DAMAGECOUNT delta
+    so aiming gets dense feedback. Shaping touches only the *learned* return;
+    `game.get_total_reward()` (what eval reports) stays the unshaped score.
+    """
     game.new_episode(record) if record else game.new_episode()
     traj = []
+    prev_damage = 0.0
     while not game.is_episode_finished():
         state = game.get_state()
         vec = enc(state)
-        neighbors = store.search(vec, k=k)
+        vis = enemy_visible(state) if aim else 0.0
+        filt = {"enemy_visible": 1.0} if (aim and vis) else None
+        # MMR re-ranks the over-fetched *filtered* pool, so it's coupled to the
+        # filter: diversify only when we filtered (enemy visible). This also
+        # spares the Pi the k_raw vector marshalling on empty frames.
+        neighbors = store.search(vec, k=k, filter=filt, diversify=filt is not None)
         a = choose_action(neighbors, len(actions), epsilon=epsilon, rng=rng)
         r = game.make_action(actions[a], frameskip)
-        traj.append((vec, a, r))
+        if aim and hit_bonus:
+            now = game.get_game_variable(vzd.GameVariable.DAMAGECOUNT)
+            r = hit_shaped_reward(r, damage_delta(prev_damage, now), hit_bonus)
+            prev_damage = now
+        traj.append((vec, a, r, vis))
 
     if learn and traj:
-        rets = discounted_returns([r for _, _, r in traj], gamma)
-        for (vec, a, _), g in zip(traj, rets):
-            store.insert(vec, {"action_idx": float(a), "return": float(g)})
+        rets = discounted_returns([t[2] for t in traj], gamma)
+        for (vec, a, _, vis), g in zip(traj, rets):
+            md = {"action_idx": float(a), "return": float(g)}
+            if aim:
+                md["enemy_visible"] = float(vis)
+            store.insert(vec, md)
     return game.get_total_reward()
 
 
@@ -77,7 +105,19 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--store", default=None, help="RuVector store path; default = fresh temp path")
     ap.add_argument("--record", default=None, help="record a final greedy episode to this .lmp")
+    ap.add_argument(
+        "--aim", action="store_true",
+        help="Track 1: aim encoder dims + enemy-visible filtered/MMR recall + hit-bonus shaping "
+        "(structured encoder only; e.g. --scenario defend_the_center --encoder structured --aim)",
+    )
+    ap.add_argument(
+        "--hit-bonus", type=float, default=0.01,
+        help="per-DAMAGECOUNT reward bonus when --aim (small; eval is on the unshaped score)",
+    )
     args = ap.parse_args()
+
+    if args.aim and args.encoder != "structured":
+        ap.error("--aim requires --encoder structured (it appends aim dims to the structured encoder)")
 
     rng = random.Random(args.seed)
     decay = args.eps_decay_episodes or int(args.episodes * 0.7)
@@ -87,13 +127,14 @@ def main() -> None:
 
     game = make_game(args.scenario, labels=use_labels, position=use_position)
     actions = discrete_actions(game)
-    enc, dim = make_encoder(args.encoder, game)
+    enc, dim = make_encoder(args.encoder, game, aim=args.aim)
     store = ExperienceStore(dim=dim, storage_path=store_path, capacity=args.capacity)
 
     where = store_path if store.backend == "native" else "in-memory"
     print(
         f"scenario={args.scenario} encoder={args.encoder} dim={dim} actions={len(actions)} "
         f"backend={store.backend} store={where} cap={args.capacity}"
+        + (f" aim=on hit_bonus={args.hit_bonus}" if args.aim else "")
     )
 
     def evaluate() -> float:
@@ -102,6 +143,7 @@ def main() -> None:
                 game, actions, enc, store,
                 epsilon=0.0, k=args.k, frameskip=args.frameskip,
                 learn=False, gamma=args.gamma, rng=rng,
+                aim=args.aim, hit_bonus=0.0,  # eval uses the real (filtered) policy; no shaping
             )
             for _ in range(args.eval_episodes)
         ]
@@ -115,6 +157,7 @@ def main() -> None:
             game, actions, enc, store,
             epsilon=eps, k=args.k, frameskip=args.frameskip,
             learn=True, gamma=args.gamma, rng=rng,
+            aim=args.aim, hit_bonus=args.hit_bonus,
         )
         if ep % args.eval_every == 0:
             print(
@@ -126,7 +169,8 @@ def main() -> None:
         total = run_episode(
             game, actions, enc, store,
             epsilon=0.0, k=args.k, frameskip=args.frameskip,
-            learn=False, gamma=args.gamma, rng=rng, record=args.record,
+            learn=False, gamma=args.gamma, rng=rng,
+            aim=args.aim, hit_bonus=0.0, record=args.record,
         )
         print(f"recorded greedy episode -> {args.record} (reward={total:+.1f})")
 
