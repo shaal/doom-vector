@@ -186,6 +186,28 @@ Each track is a curriculum rung: `basic` ✓ → **`defend_the_center`** → **`
 
 ---
 
+## 6.5 Tasks (shipyard checklist)
+
+One checkbox per track, in the §6 dependency order. Each ships as its own
+quality-gated PR; honor the `depends:` notes — don't start a task whose
+dependency is still unchecked. Sub-bullets are scope, not separate tasks.
+
+- [ ] **Track 1 — Aim (`defend_the_center`).** depends: none. (see §2 + §0.5)
+  - Bridge: turn on `SearchQuery.filter` with over-fetch (`k_raw = k * over_fetch`) so the post-filter doesn't starve the value vote; add MMR-diverse re-ranking.
+  - Policy: aim/threat encoder dims + small hit-bonus reward shaping (eval on the *unshaped* scenario score).
+  - Done when: the agent measurably learns to shoot on `defend_the_center` and the filtered-recall + reward-shaping pattern is reusable by later tracks.
+- [ ] **Track 2 — Capacity (dim/cap/eviction).** depends: none (independent infra; sequence after Track 1). (see §3 + §0.5)
+  - Quantization gate failed (§0.5) — so benchmark the Pi's experience budget via smaller embedding dim, tighter `max_elements` cap, and better eviction, not a `quantization=` kwarg.
+  - Done when: there's a documented capacity/coverage benchmark on the real Pi with the dim/cap/eviction levers characterized.
+- [ ] **Track 3 — Dodge (`take_cover`).** depends: Track 1. (see §4)
+  - Reuse Track 1's encoder/reward scaffolding; use recall-uncertainty as a safety signal; conformal-prediction calibration is an optional stretch (no bridge change needed for the first cut).
+  - Done when: the agent measurably reduces damage taken on `take_cover`.
+- [ ] **Track 4 — Explainer doc.** depends: Tracks 1–3 (skeleton early, figures harvested as they land). (see §5 + §1 table)
+  - A plain-language repo doc teaching each RuVector feature via the agent, including the honest negative result that quantization is in the type system but not load-bearing in 2.2.0 (§0.5).
+  - Done when: the doc covers all four tracks with figures/results drawn from their PRs.
+
+---
+
 ## 7. Risks & unknowns (tracked, in the doc's tradition)
 
 | Risk | Why it matters | Mitigation |
