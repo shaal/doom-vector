@@ -132,6 +132,110 @@ Beyond the two §0.5 gates, we audited the rest of 2.2.0's advanced surface agai
 
 **Success (revised):** a capacity table showing experiences-held and recall-latency vs. *dim and cap* on the A53 (not per quantization scheme), plus the documented negative result. The honest finding — "quantization is in 2.2.0's type system but not yet load-bearing in `VectorDB`" — is itself a Track-4 explainer entry.
 
+### 3.1 Benchmark results — real Seed (Pi Zero 2 W, armv7l, 2026-06-13)
+
+Measured with `deploy/bench_seed.py matrix` on the actual 32-bit Seed — **store
+only** (no ViZDoom), so these isolate the *memory's* RAM/throughput, not the full
+agent (§9's *full-agent* SCALE runs include ViZDoom's ~27 MiB base; §9's
+*hardware-only* table — which the coverage curve below cross-checks — is store-only
+like this one, on a ~10–13 MiB python+`ruvector_py` base). Reproduce on-device:
+`python3 deploy/bench_seed.py matrix` (rootfs store, ~25 min). The bench drives
+the stable `insert/search/delete` API directly and **replicates
+`ExperienceStore._evict_native` line-for-line**, so the eviction numbers reflect
+the real mechanism. Caveats baked into the output: `*`insert/s is **fsync-bound**
+(redb on the SD card), not a CPU figure; `**`search/s is the **raw native recall
+rate — an upper bound**; the live per-decision rate is lower by the encode +
+marshal in `ExperienceStore.search`; query vectors are uniform-random, so recall
+*timing* is indicative, not encoder-faithful.
+
+**Cap lever — `max_elements` is a *lazy* ceiling (empty-store RAM, dim 8, fresh process per cap).**
+
+| `max_elements` | empty-store RAM (over the ~10.9 MiB python+`ruvector_py` base) |
+|---|---|
+| 20,000 | 2.34 MiB |
+| 50,000 | 2.35 MiB |
+| 100,000 | 2.35 MiB |
+
+**Flat** — the graph grows as needed *within* the cap, so raising `max_elements`
+does **not** eagerly pre-allocate (a 100k store costs the same ~2.3 MiB as a 20k
+one; contrast the 10 M default's ~661 MB, §9 — that OOM is the default *config*,
+not a per-cap scaling law). So the prod default (100k) is essentially free when
+the store isn't full; capacity cost is dominated by **held vectors and
+tombstones**, not the cap value. (The bench measures one cap per process: a
+within-process multi-cap sweep is allocator-noisy — a deleted store's retained
+pages distort the next construct's reading — so `matrix` isolates each.)
+
+**Coverage curve — RSS + recall vs held-count (dim 8, cap 100k = prod default).**
+
+| held | RSS | insert/s `*` | recall (search/s) `**` | ms/search |
+|---|---|---|---|---|
+| 2,000 | 16.1 MiB | 30 | 345 | 2.9 |
+| 5,000 | 20.0 MiB | 23 | 334 | 3.0 |
+| 10,000 | 27.5 MiB | 23 | 307 | 3.3 |
+| 20,000 | 43.3 MiB | 20 | 283 | 3.5 |
+
+≈ **1.5 KiB RSS per held vector** at dim 8 ((43.3 − 13.1) MiB ÷ 20,000, over a
+13.1 MiB empty store). Cross-checks §9's hardware table (20k ≈ 40.4 MiB, ~305/s) —
+this run's 20k row (43.3 MiB / 283/s) sits ~5–7% off, run-to-run drift not a
+regression — and recall holds **~283–345 decisions/s — ~30–38× the ~9/s real-time
+bar** (small-store recall runs higher and is variance-prone, ±~15% run-to-run).
+
+**Dim lever — RSS & recall vs embedding dim (held 5,000, cap 100k).**
+
+| dim | RSS | recall (search/s) `**` | ms/search |
+|---|---|---|---|
+| 8 | 20.0 MiB | 334 | 3.0 |
+| 16 | 21.7 MiB | 213 | 4.7 |
+| 32 | 24.4 MiB | 136 | 7.3 |
+
+RSS grows ~**linearly with dim** (≈ 0.19 MiB per added dim per 5,000 vectors ≈
+40 B/dim/vector — ~10× the raw 4 B/dim f32, the rest being HNSW links + redb +
+metadata), and recall-ms ~2.4× from dim 8→32 (no-SIMD scalar distance on the
+A53, §9). **Dim discipline is the cheapest capacity lever** — every dim is
+bytes × held — and, with no quantization safety net (§0.5), the *only* compression
+lever we have. Keep encoder additions (Tracks 1/3) to a handful of dims.
+
+**Eviction lever — value-based, hard-bounds live count; tombstones creep (dim 8, capacity 5,000).**
+
+| inserts | phase | live count | RSS |
+|---|---|---|---|
+| 2,000 | fill | 2,000 | 16.6 MiB |
+| 4,000 | fill | 4,000 | 19.9 MiB |
+| 6,000 | churn | **5,000** | 21.7 MiB |
+| 8,000 | churn | **5,000** | 23.7 MiB |
+| 10,000 | churn | **5,000** | 25.9 MiB |
+| 12,000 | churn | **5,000** | 28.1 MiB |
+
+The live count **pins exactly at the capacity (5,000)** under sustained churn —
+the memory is hard-bounded, as designed (drop the lowest-`return` entry on every
+overflow). **But** RSS still creeps ≈ **1.09 KiB per evicting-insert** (7.5 MiB
+over 6,999 churn inserts) because HNSW `delete` *tombstones* the slot; RAM is
+reclaimed only on a compaction/rebuild we never trigger (the `experience_store`
+docstring and §9 stress warn this). So capacity has **two distinct ceilings**:
+
+- **Live-count / RSS ceiling** — the eviction `capacity` bounds live experiences
+  and steady-state RSS (modulo tombstone creep). This is the working-set knob.
+- **Lifetime-insert ceiling** — `max_elements` (prod default 100k) bounds *total
+  inserts over the store's life*: every insert consumes a slot whether or not it
+  is later evicted. A run inserting > `max_elements` experiences exhausts the
+  slots regardless of how small the live cap is. At the agent's per-step insert
+  rate that is a many-thousands-of-episodes concern; the fix is a periodic store
+  rebuild/compaction (out of scope here — flagged for a future RuVector bump).
+
+**Capacity levers, ranked (the §3 deliverable):**
+
+1. **embedding dim** — linear in RAM, the cheapest and (post-§0.5) only
+   compression lever; hold the line on encoder bloat.
+2. **eviction `capacity`** — hard-bounds live RAM; size it to the working set the
+   scenario needs (a single room fits in a few thousand; a full map needs more).
+3. **`max_elements`** — free to set generously (lazy), but it is the *lifetime*-
+   insert ceiling, so pair a high cap with periodic compaction on very long runs.
+
+Quantization would have multiplied this budget 4–32× *in the same 512 MB*, but
+it is inert in 2.2.0 (§0.5). So on the Pi the honest recipe is: **keep dim tight,
+size the eviction capacity to the scenario, and rebuild periodically on long
+runs** — no compression shortcut exists today.
+
 ---
 
 ## 4. Track 3 — Dodge (`take_cover`)
@@ -196,9 +300,9 @@ dependency is still unchecked. Sub-bullets are scope, not separate tasks.
   - Bridge: turn on `SearchQuery.filter` with over-fetch (`k_raw = k * over_fetch`) so the post-filter doesn't starve the value vote; add MMR-diverse re-ranking.
   - Policy: aim/threat encoder dims + small hit-bonus reward shaping (eval on the *unshaped* scenario score).
   - Done when: the agent measurably learns to shoot on `defend_the_center` and the filtered-recall + reward-shaping pattern is reusable by later tracks.
-- [ ] **Track 2 — Capacity (dim/cap/eviction).** depends: none (independent infra; sequence after Track 1). (see §3 + §0.5)
+- [x] **Track 2 — Capacity (dim/cap/eviction).** depends: none (independent infra; sequence after Track 1). (see §3 + §3.1 + §0.5)
   - Quantization gate failed (§0.5) — so benchmark the Pi's experience budget via smaller embedding dim, tighter `max_elements` cap, and better eviction, not a `quantization=` kwarg.
-  - Done when: there's a documented capacity/coverage benchmark on the real Pi with the dim/cap/eviction levers characterized.
+  - Done when: there's a documented capacity/coverage benchmark on the real Pi with the dim/cap/eviction levers characterized. → **done:** `deploy/bench_seed.py matrix` measured all three levers on the real Seed; results + findings (lazy `max_elements` ceiling, ~1.5 KiB/held-vector, linear dim cost, hard-bounded live count with tombstone creep, the two capacity ceilings) in §3.1.
 - [ ] **Track 3 — Dodge (`take_cover`).** depends: Track 1. (see §4)
   - Reuse Track 1's encoder/reward scaffolding; use recall-uncertainty as a safety signal; conformal-prediction calibration is an optional stretch (no bridge change needed for the first cut).
   - Done when: the agent measurably reduces damage taken on `take_cover`.
