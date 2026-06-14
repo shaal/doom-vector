@@ -14,6 +14,8 @@ A self-learning Doom agent built on **ViZDoom** (environment) + **RuVector** (`r
 
 See [`docs/plans/doom-vector-self-learning-agent.md`](docs/plans/doom-vector-self-learning-agent.md) for the full design, rationale, and roadmap.
 
+New to RuVector? [`docs/ruvector-by-example.md`](docs/ruvector-by-example.md) is a plain-language tour of every vector-DB feature this agent uses (and the ones that turned out inert), each anchored to a real call site with a figure or measured result as proof.
+
 ## Repo layout
 
 ```
