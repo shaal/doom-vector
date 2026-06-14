@@ -26,3 +26,24 @@ def hit_shaped_reward(reward: float, dmg_delta: float, bonus: float) -> float:
     reward so it shapes aim without encouraging spray-and-pray (the eval on the
     unshaped score is the guard against that)."""
     return reward + bonus * dmg_delta
+
+
+def health_delta(prev: float, now: float) -> float:
+    """Damage *taken* this step (>=0), from ViZDoom's HEALTH variable — the
+    symmetric counterpart to `damage_delta`.
+
+    Clamped to >=0: HEALTH drops on damage but rises on a pickup, and new_episode
+    resets it to full, so `prev - now` can go negative. Returning 0 there is
+    correct — gaining or resetting health is not 'damage taken'."""
+    return max(0.0, prev - now)
+
+
+def dodge_shaped_reward(reward: float, health_loss: float, penalty: float) -> float:
+    """Subtract a small per-step penalty for damage taken (Track 3, Dodge).
+
+    Dodging is continuous and needs continuous feedback — death alone is too
+    sparse to shape evasion. `penalty` is per unit of HEALTH lost; keep it small
+    relative to the scenario reward so it shapes dodging without teaching the
+    agent to freeze in a corner (the eval on the unshaped survival score is the
+    guard against that)."""
+    return reward - penalty * health_loss

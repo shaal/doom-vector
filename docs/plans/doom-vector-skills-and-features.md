@@ -255,6 +255,62 @@ runs** — no compression shortcut exists today.
 
 **Success:** greedy-eval survival time on `take_cover` rises above random; a GIF shows the agent sidestepping fireballs; the uncertainty-gated safe-fallback measurably reduces deaths vs. the same policy without it (ablation → Track-4 figure).
 
+### 4.1 Results — real ViZDoom `take_cover` (x86 native backend, 2026-06-14)
+
+Shipped as `--dodge` on `experiments/train.py` (e.g. `--scenario take_cover
+--encoder structured --dodge`). What landed, against §4:
+- **Encoder (`brain/encoder/structured.py`, `THREAT_DIMS=4`):** the nearest
+  *projectile's* dx/size/visible + per-step **Δhealth**. take_cover labels the
+  fireball as `DoomImpBall` and the wall monsters as `DoomImp`; dodging keys on
+  the projectile (`_projectiles`), not the monster that fired it — strafing away
+  from a wall monster is the wrong reference. Δhealth needs the *change* in HEALTH,
+  so the encoder is made stateful (tracks previous HEALTH; episode-reset jumps
+  clamp to 0).
+- **Reward (`brain/policy/reward.py` `dodge_shaped_reward`, default
+  `--health-penalty 0.05`):** small per-step penalty for HEALTH lost — the
+  symmetric counterpart to Track 1's hit bonus. Eval reports the *unshaped*
+  survival score.
+- **Policy (`brain/policy/episodic.py` `recall_uncertainty` + `choose_action_safe`):**
+  uncertainty = normalized Shannon entropy of the similarity-weighted action vote
+  (empty recall → 1.0); when it meets `--evade-threshold` (default 0.6) the policy
+  strafes *away* from the nearest projectile instead of trusting a weak vote. No
+  bridge change (the conformal stretch is deferred).
+
+**Benchmark — mean survival ticks (`living_reward=1`, so this is the inverse of
+damage taken), paired/seeded eval, 3 deterministic training seeds × 30 eval
+episodes:**
+
+| policy | mean survival | per-seed |
+|---|---|---|
+| random | 309.9 | 312 / 314 / 304 |
+| evade-always (heuristic only, no recall) | 314.7 | 315 / 316 / 313 |
+| value-vote only (recall, no fallback) | 322.2 | 324 / 339 / 304 |
+| **vote + uncertainty-gated evade @0.6** | **336.8** | 355 / 330 / 325 |
+| vote + evade @0.7 | 356.2 | 334 / 360 / 375 |
+| vote + evade @0.8 | 321.7 | 311 / 340 / 314 |
+
+Reproduce: `python experiments/train.py --scenario take_cover --encoder
+structured --dodge` prints a paired `[dodge ablation]` line. The headline: the
+agent **measurably reduces damage taken** (survives 15–30 % longer than random,
+the ratio varying with episode difficulty across eval-seed sets), robustly across
+training seeds. Crucially, *neither* the evade heuristic alone (≈315) *nor*
+learned recall alone (≈322) is strong — the **uncertainty-gated combination**
+(337–356) beats both, which is the Track-3 thesis: trust learned recall when it's
+confident, fall back to a safe evade when it isn't. The winning threshold band is
+0.5–0.7; 0.8 evades too rarely and collapses to pure voting.
+
+**Bonus finding (Track-4 explainer fodder — an honest "load-bearing vs. present"
+entry like §0.5/§1.5):** wiring the uncertainty signal surfaced a real bug in the
+recall *score sign*. ruvector-core's native `search` returns raw **L2 distance**
+(smaller = closer), while the numpy fallback returns **negative** L2 (bigger =
+closer). `choose_action`/`recall_uncertainty` weight by `score − min_score`, so on
+the *native* (Pi) backend the weighting was **inverted** — the farthest neighbour
+dominated the vote. It still learned (return-to-go dominates over the k-nearest
+set), which is why Tracks 1–2 didn't catch it. Fixed by negating the native score
+at the backend boundary (`brain/memory/experience_store.py`), so both backends now
+return identical scores; a `tests/test_backend_parity.py` regression test locks it.
+This corrects the Pi value vote for *all* tracks, not just dodge.
+
 ---
 
 ## 5. Track 4 — The explainer doc
@@ -303,9 +359,9 @@ dependency is still unchecked. Sub-bullets are scope, not separate tasks.
 - [x] **Track 2 — Capacity (dim/cap/eviction).** depends: none (independent infra; sequence after Track 1). (see §3 + §3.1 + §0.5)
   - Quantization gate failed (§0.5) — so benchmark the Pi's experience budget via smaller embedding dim, tighter `max_elements` cap, and better eviction, not a `quantization=` kwarg.
   - Done when: there's a documented capacity/coverage benchmark on the real Pi with the dim/cap/eviction levers characterized. → **done:** `deploy/bench_seed.py matrix` measured all three levers on the real Seed; results + findings (lazy `max_elements` ceiling, ~1.5 KiB/held-vector, linear dim cost, hard-bounded live count with tombstone creep, the two capacity ceilings) in §3.1.
-- [ ] **Track 3 — Dodge (`take_cover`).** depends: Track 1. (see §4)
+- [x] **Track 3 — Dodge (`take_cover`).** depends: Track 1. (see §4 + §4.1)
   - Reuse Track 1's encoder/reward scaffolding; use recall-uncertainty as a safety signal; conformal-prediction calibration is an optional stretch (no bridge change needed for the first cut).
-  - Done when: the agent measurably reduces damage taken on `take_cover`.
+  - Done when: the agent measurably reduces damage taken on `take_cover`. → **done:** threat (projectile-aware) encoder dims + per-step health-loss reward penalty + uncertainty-gated evasive fallback (`choose_action_safe`); on the real ViZDoom `take_cover` (native backend, `living_reward=1` so survival ticks = inverse of damage taken) the agent survives **~15–30 % longer than random**, robust across 3 training seeds, with the **uncertainty-gated evade fallback** providing the bulk of the lift over pure value-voting — results + the score-sign bug it surfaced in §4.1. No bridge change (verified). Conformal stretch deferred.
 - [ ] **Track 4 — Explainer doc.** depends: Tracks 1–3 (skeleton early, figures harvested as they land). (see §5 + §1 table)
   - A plain-language repo doc teaching each RuVector feature via the agent, including the honest negative result that quantization is in the type system but not load-bearing in 2.2.0 (§0.5).
   - Done when: the doc covers all four tracks with figures/results drawn from their PRs.

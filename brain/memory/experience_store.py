@@ -119,9 +119,14 @@ class ExperienceStore:
     ) -> list[tuple[str, float, dict]]:
         """Return up to k (id, score, metadata) tuples, nearest first.
 
-        Native scores come from ruvector-core's distance metric. The numpy
-        fallback returns negative L2 distance (higher = closer) so both
-        backends agree on "bigger score == more similar".
+        Score sign is normalized to "bigger score == more similar" on *both*
+        backends: ruvector-core's native ``search`` returns raw L2 *distance*
+        (smaller == closer), so we negate it here; the numpy fallback already
+        returns negative L2. Without this, `choose_action` / `recall_uncertainty`
+        — which weight by ``score - min_score`` — would weight the *farthest*
+        neighbour most on the native (Pi) backend. After normalization the two
+        backends return identical scores for identical data, so the value vote
+        and the uncertainty gate are genuinely backend-agnostic.
 
         Track 1 (Aim) adds three composable knobs, all encapsulated here so the
         public contract stays a 3-tuple (`choose_action` is unchanged):
@@ -145,7 +150,8 @@ class ExperienceStore:
             # candidate vector only when we ask (with_vectors), keeping the
             # no-MMR path cheap on the Pi.
             raw = self._impl.search(v.tolist(), k_raw, filter, with_vectors=diversify)
-            cands = [(r[0], r[1], r[2], r[3]) for r in raw]
+            # Negate native L2 distance -> "bigger == more similar" (see docstring).
+            cands = [(r[0], -r[1], r[2], r[3]) for r in raw]
         else:
             cands = self._search_numpy(v, k_raw, filter, with_vectors=diversify)
 
